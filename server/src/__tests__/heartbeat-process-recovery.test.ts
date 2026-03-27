@@ -242,54 +242,78 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
   it("sets idle_warning when a run has no output for over 10 minutes", async () => {
     const elevenMinutesAgo = new Date(Date.now() - 11 * 60 * 1000);
+    const child = spawnAliveProcess();
+    childProcesses.add(child);
     const { runId } = await seedRunFixture({
       includeIssue: false,
+      processPid: child.pid ?? null,
       startedAt: elevenMinutesAgo,
       lastOutputAt: elevenMinutesAgo,
     });
+    // Register in runningProcesses so orphan reaper skips it; idle pass still checks it
+    runningProcesses.set(runId, { child, graceSec: 10 } as any);
     const heartbeat = heartbeatService(db);
 
-    const result = await heartbeat.reapOrphanedRuns();
-    expect(result.idleWarned).toBe(1);
-    expect(result.idleKilled).toBe(0);
+    try {
+      const result = await heartbeat.reapOrphanedRuns();
+      expect(result.idleWarned).toBe(1);
+      expect(result.idleKilled).toBe(0);
 
-    const run = await heartbeat.getRun(runId);
-    expect(run?.status).toBe("running");
-    expect(run?.errorCode).toBe("idle_warning");
+      const run = await heartbeat.getRun(runId);
+      expect(run?.status).toBe("running");
+      expect(run?.errorCode).toBe("idle_warning");
+    } finally {
+      runningProcesses.delete(runId);
+    }
   });
 
   it("kills a run that has been idle for over 15 minutes", async () => {
     const sixteenMinutesAgo = new Date(Date.now() - 16 * 60 * 1000);
+    const child = spawnAliveProcess();
+    childProcesses.add(child);
     const { runId } = await seedRunFixture({
-      processPid: 999_999_999,
+      processPid: child.pid ?? null,
       startedAt: sixteenMinutesAgo,
       lastOutputAt: sixteenMinutesAgo,
     });
+    runningProcesses.set(runId, { child, graceSec: 10 } as any);
     const heartbeat = heartbeatService(db);
 
-    const result = await heartbeat.reapOrphanedRuns();
-    expect(result.idleKilled).toBe(1);
+    try {
+      const result = await heartbeat.reapOrphanedRuns();
+      expect(result.idleKilled).toBe(1);
 
-    const run = await heartbeat.getRun(runId);
-    expect(run?.status).toBe("failed");
-    expect(run?.errorCode).toBe("idle_timeout");
+      const run = await heartbeat.getRun(runId);
+      expect(run?.status).toBe("failed");
+      expect(run?.errorCode).toBe("idle_timeout");
+    } finally {
+      runningProcesses.delete(runId);
+    }
   });
 
   it("does not idle-warn a run with recent output", async () => {
+    const child = spawnAliveProcess();
+    childProcesses.add(child);
     const { runId } = await seedRunFixture({
       includeIssue: false,
+      processPid: child.pid ?? null,
       startedAt: new Date(Date.now() - 20 * 60 * 1000),
       lastOutputAt: new Date(),
     });
+    runningProcesses.set(runId, { child, graceSec: 10 } as any);
     const heartbeat = heartbeatService(db);
 
-    const result = await heartbeat.reapOrphanedRuns();
-    expect(result.idleWarned).toBe(0);
-    expect(result.idleKilled).toBe(0);
+    try {
+      const result = await heartbeat.reapOrphanedRuns();
+      expect(result.idleWarned).toBe(0);
+      expect(result.idleKilled).toBe(0);
 
-    const run = await heartbeat.getRun(runId);
-    expect(run?.status).toBe("running");
-    expect(run?.errorCode).toBeNull();
+      const run = await heartbeat.getRun(runId);
+      expect(run?.status).toBe("running");
+      expect(run?.errorCode).toBeNull();
+    } finally {
+      runningProcesses.delete(runId);
+    }
   });
 
   it("clears the detached warning when the run reports activity again", async () => {
