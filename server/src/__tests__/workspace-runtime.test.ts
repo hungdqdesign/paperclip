@@ -888,6 +888,72 @@ describe("realizeExecutionWorkspace", () => {
     });
   });
 
+  it("refuses to remove a dirty git worktree during cleanup", async () => {
+    const repoRoot = await createTempRepo();
+
+    const workspace = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-1100",
+        title: "Dirty cleanup stays put",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+
+    await fs.writeFile(path.join(workspace.cwd, "left-behind.txt"), "still dirty\n", "utf8");
+
+    const cleanup = await cleanupExecutionWorkspaceArtifacts({
+      workspace: {
+        id: "execution-workspace-1",
+        cwd: workspace.cwd,
+        providerType: "git_worktree",
+        providerRef: workspace.worktreePath,
+        branchName: workspace.branchName,
+        repoUrl: workspace.repoUrl,
+        baseRef: workspace.repoRef,
+        projectId: workspace.projectId,
+        projectWorkspaceId: workspace.workspaceId,
+        sourceIssueId: "issue-1",
+        metadata: {
+          createdByRuntime: true,
+        },
+      },
+      projectWorkspace: {
+        cwd: repoRoot,
+        cleanupCommand: null,
+      },
+    });
+
+    expect(cleanup.cleaned).toBe(false);
+    expect(cleanup.warnings).toHaveLength(2);
+    expect(cleanup.warnings[0]).toContain("use --force to delete it");
+    expect(cleanup.warnings[1]).toContain(`Skipped deleting branch "${workspace.branchName}"`);
+    await expect(fs.stat(workspace.cwd)).resolves.toBeTruthy();
+    await expect(
+      execFileAsync("git", ["branch", "--list", workspace.branchName!], { cwd: repoRoot }),
+    ).resolves.toMatchObject({
+      stdout: expect.stringContaining(workspace.branchName!),
+    });
+  });
+
   it("records teardown and cleanup operations when a recorder is provided", async () => {
     const repoRoot = await createTempRepo();
     const { recorder, operations } = createWorkspaceOperationRecorderDouble();

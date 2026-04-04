@@ -816,7 +816,7 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
         try {
           await recordGitOperation(input.recorder, {
             phase: "worktree_cleanup",
-            args: ["worktree", "remove", "--force", workspacePath],
+            args: ["worktree", "remove", workspacePath],
             cwd: repoRoot,
             metadata: {
               workspaceId: input.workspace.id,

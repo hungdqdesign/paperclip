@@ -221,7 +221,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     ]));
   });
 
-  it("warns about dirty and unmerged git worktrees and reports cleanup actions", async () => {
+  it("warns about unmerged git worktrees and reports cleanup actions", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
     const worktreePath = path.join(path.dirname(repoRoot), `paperclip-worktree-${randomUUID()}`);
@@ -232,7 +232,6 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     await fs.writeFile(path.join(worktreePath, "feature.txt"), "hello\n", "utf8");
     await runGit(worktreePath, ["add", "feature.txt"]);
     await runGit(worktreePath, ["commit", "-m", "Feature commit"]);
-    await fs.writeFile(path.join(worktreePath, "untracked.txt"), "left behind\n", "utf8");
 
     const companyId = randomUUID();
     const projectId = randomUUID();
@@ -304,14 +303,13 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         baseRef: "main",
         createdByRuntime: true,
         hasDirtyTrackedFiles: false,
-        hasUntrackedFiles: true,
+        hasUntrackedFiles: false,
         aheadCount: 1,
         behindCount: 0,
         isMergedIntoBase: false,
       },
     });
     expect(readiness?.warnings).toEqual(expect.arrayContaining([
-      "The workspace has 1 untracked file.",
       "This workspace is 1 commit ahead of main and is not merged.",
     ]));
     expect(readiness?.plannedActions.map((action) => action.kind)).toEqual(expect.arrayContaining([
@@ -321,5 +319,85 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       "git_worktree_remove",
       "git_branch_delete",
     ]));
+  }, 20_000);
+
+  it("blocks closing dirty git worktrees now that close is non-forced", async () => {
+    const repoRoot = await createTempRepo();
+    tempDirs.add(repoRoot);
+    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-worktree-${randomUUID()}`);
+    tempDirs.add(worktreePath);
+
+    await runGit(repoRoot, ["branch", "paperclip-dirty-check"]);
+    await runGit(repoRoot, ["worktree", "add", worktreePath, "paperclip-dirty-check"]);
+    await fs.writeFile(path.join(worktreePath, "untracked.txt"), "left behind\n", "utf8");
+
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    const executionWorkspaceId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: "PAP",
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Workspaces",
+      status: "in_progress",
+      executionWorkspacePolicy: {
+        enabled: true,
+        workspaceStrategy: {
+          type: "git_worktree",
+        },
+      },
+    });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Primary",
+      sourceType: "git_repo",
+      isPrimary: true,
+      cwd: repoRoot,
+    });
+    await db.insert(executionWorkspaces).values({
+      id: executionWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "Dirty workspace",
+      status: "active",
+      providerType: "git_worktree",
+      cwd: worktreePath,
+      providerRef: worktreePath,
+      branchName: "paperclip-dirty-check",
+      baseRef: "main",
+      metadata: {
+        createdByRuntime: true,
+      },
+    });
+
+    const readiness = await svc.getCloseReadiness(executionWorkspaceId);
+
+    expect(readiness).toMatchObject({
+      workspaceId: executionWorkspaceId,
+      state: "blocked",
+      isDestructiveCloseAllowed: false,
+      git: {
+        hasDirtyTrackedFiles: false,
+        hasUntrackedFiles: true,
+      },
+    });
+    expect(readiness?.blockingReasons).toContain(
+      "This git worktree still has untracked files. Clean, commit, stash, or move them before closing.",
+    );
+    expect(readiness?.plannedActions.find((action) => action.kind === "git_worktree_remove")).toMatchObject({
+      command: `git worktree remove ${worktreePath}`,
+    });
   }, 20_000);
 });

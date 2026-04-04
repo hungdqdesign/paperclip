@@ -508,6 +508,17 @@ export function executionWorkspaceService(db: Db) {
         );
       }
 
+      if (!isSharedWorkspace && executionWorkspace.providerType === "git_worktree" && git) {
+        const dirtyConditions: string[] = [];
+        if (git.hasDirtyTrackedFiles) dirtyConditions.push("modified tracked files");
+        if (git.hasUntrackedFiles) dirtyConditions.push("untracked files");
+        if (dirtyConditions.length > 0) {
+          blockingReasons.push(
+            `This git worktree still has ${dirtyConditions.join(" and ")}. Clean, commit, stash, or move them before closing.`,
+          );
+        }
+      }
+
       const plannedActions: ExecutionWorkspaceCloseAction[] = [
         {
           kind: "archive_record",
@@ -562,8 +573,8 @@ export function executionWorkspaceService(db: Db) {
         plannedActions.push({
           kind: "git_worktree_remove",
           label: "Remove git worktree",
-          description: `Paperclip will run git worktree cleanup for ${workspacePath}.`,
-          command: `git worktree remove --force ${workspacePath}`,
+          description: `Paperclip will remove the git worktree at ${workspacePath} without forcing dirty checkouts.`,
+          command: `git worktree remove ${workspacePath}`,
         });
       }
 
