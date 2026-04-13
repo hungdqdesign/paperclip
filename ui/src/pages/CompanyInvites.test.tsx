@@ -16,7 +16,7 @@ const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/access", () => ({
   accessApi: {
-    listInvites: (companyId: string) => listInvitesMock(companyId),
+    listInvites: (companyId: string, options?: unknown) => listInvitesMock(companyId, options),
     createCompanyInvite: (companyId: string, input: unknown) =>
       createCompanyInviteMock(companyId, input),
     revokeInvite: (inviteId: string) => revokeInviteMock(inviteId),
@@ -50,63 +50,47 @@ async function flushReact() {
 
 describe("CompanyInvites", () => {
   let container: HTMLDivElement;
+  const inviteHistory = Array.from({ length: 25 }, (_, index) => {
+    const inviteNumber = 25 - index;
+    const isActive = inviteNumber === 25;
+    return {
+      id: `invite-${inviteNumber}`,
+      companyId: "company-1",
+      inviteType: "company_join",
+      tokenHash: `hash-${inviteNumber}`,
+      allowedJoinTypes: "human",
+      defaultsPayload: null,
+      expiresAt: "2026-04-20T00:00:00.000Z",
+      invitedByUserId: "user-1",
+      revokedAt: null,
+      acceptedAt: isActive ? null : "2026-04-11T00:00:00.000Z",
+      createdAt: `2026-04-${String(inviteNumber).padStart(2, "0")}T00:00:00.000Z`,
+      updatedAt: `2026-04-${String(inviteNumber).padStart(2, "0")}T00:00:00.000Z`,
+      companyName: "Paperclip",
+      humanRole: isActive ? "operator" : "viewer",
+      inviteMessage: null,
+      state: isActive ? "active" : "accepted",
+      invitedByUser: {
+        id: "user-1",
+        name: `Board User ${inviteNumber}`,
+        email: `board${inviteNumber}@paperclip.local`,
+        image: null,
+      },
+      relatedJoinRequestId: isActive ? "join-1" : null,
+    };
+  });
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
 
-    listInvitesMock.mockResolvedValue([
-      {
-        id: "invite-1",
-        companyId: "company-1",
-        inviteType: "company_join",
-        tokenHash: "hash-1",
-        allowedJoinTypes: "human",
-        defaultsPayload: null,
-        expiresAt: "2026-04-20T00:00:00.000Z",
-        invitedByUserId: "user-1",
-        revokedAt: null,
-        acceptedAt: null,
-        createdAt: "2026-04-10T00:00:00.000Z",
-        updatedAt: "2026-04-10T00:00:00.000Z",
-        companyName: "Paperclip",
-        humanRole: "operator",
-        inviteMessage: null,
-        state: "active",
-        invitedByUser: {
-          id: "user-1",
-          name: "Board User",
-          email: "board@paperclip.local",
-          image: null,
-        },
-        relatedJoinRequestId: "join-1",
-      },
-      {
-        id: "invite-2",
-        companyId: "company-1",
-        inviteType: "company_join",
-        tokenHash: "hash-2",
-        allowedJoinTypes: "human",
-        defaultsPayload: null,
-        expiresAt: "2026-04-20T00:00:00.000Z",
-        invitedByUserId: "user-1",
-        revokedAt: null,
-        acceptedAt: "2026-04-11T00:00:00.000Z",
-        createdAt: "2026-04-09T00:00:00.000Z",
-        updatedAt: "2026-04-11T00:00:00.000Z",
-        companyName: "Paperclip",
-        humanRole: "viewer",
-        inviteMessage: null,
-        state: "accepted",
-        invitedByUser: {
-          id: "user-1",
-          name: "Board User",
-          email: "board@paperclip.local",
-          image: null,
-        },
-        relatedJoinRequestId: null,
-      },
-    ]);
+    listInvitesMock.mockImplementation((_companyId: string, options?: { limit?: number; offset?: number }) => {
+      const limit = options?.limit ?? 20;
+      const offset = options?.offset ?? 0;
+      const invites = inviteHistory.slice(offset, offset + limit);
+      const nextOffset = offset + invites.length < inviteHistory.length ? offset + invites.length : null;
+      return Promise.resolve({ invites, nextOffset });
+    });
 
     createCompanyInviteMock.mockResolvedValue({
       inviteUrl: "https://paperclip.local/invite/new-token",
@@ -151,8 +135,11 @@ describe("CompanyInvites", () => {
     expect(container.textContent).toContain("Company Invites");
     expect(container.textContent).toContain("Create invite");
     expect(container.textContent).toContain("Invite history");
-    expect(container.textContent).toContain("Board User");
+    expect(container.textContent).toContain("Board User 25");
+    expect(container.textContent).toContain("Board User 6");
+    expect(container.textContent).not.toContain("Board User 5");
     expect(container.textContent).toContain("Review request");
+    expect(container.textContent).toContain("View more");
     expect(container.textContent).not.toContain("Human or agent");
     expect(container.textContent).not.toContain("Invite message");
     expect(container.textContent).not.toContain("Latest generated invite");
@@ -165,6 +152,22 @@ describe("CompanyInvites", () => {
     expect(container.textContent).toContain("Each invite link is single-use.");
     expect(container.textContent).toContain("Can create agents, invite users, assign tasks, and approve join requests.");
     expect(container.textContent).toContain("Everything in Admin, plus managing members and permission grants.");
+    expect(listInvitesMock).toHaveBeenCalledWith("company-1", { limit: 20, offset: 0 });
+
+    const viewMoreButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "View more",
+    );
+
+    await act(async () => {
+      viewMoreButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(listInvitesMock).toHaveBeenCalledWith("company-1", { limit: 20, offset: 20 });
+    expect(container.textContent).toContain("Board User 5");
+    expect(container.textContent).toContain("Board User 1");
+    expect(container.textContent).not.toContain("View more");
 
     await act(async () => {
       const viewerRadio = container.querySelector('input[type="radio"][value="viewer"]') as HTMLInputElement | null;
@@ -218,7 +221,7 @@ describe("CompanyInvites", () => {
     });
     await flushReact();
 
-    expect(revokeInviteMock).toHaveBeenCalledWith("invite-1");
+    expect(revokeInviteMock).toHaveBeenCalledWith("invite-25");
 
     await act(async () => {
       root.unmount();

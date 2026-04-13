@@ -52,6 +52,8 @@ export type ListJoinRequestsQuery = z.infer<typeof listJoinRequestsQuerySchema>;
 
 export const listCompanyInvitesQuerySchema = z.object({
   state: z.enum(["active", "revoked", "accepted", "expired"]).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
 export type ListCompanyInvitesQuery = z.infer<typeof listCompanyInvitesQuerySchema>;

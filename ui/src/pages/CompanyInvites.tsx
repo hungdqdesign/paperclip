@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, ExternalLink, MailPlus } from "lucide-react";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
@@ -36,6 +36,8 @@ const inviteRoleOptions = [
     gets: "Everything in Admin, plus managing members and permission grants.",
   },
 ] as const;
+
+const INVITE_HISTORY_PAGE_SIZE = 20;
 
 export function CompanyInvites() {
   const { selectedCompany, selectedCompanyId } = useCompany();
@@ -80,11 +82,22 @@ export function CompanyInvites() {
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
-  const invitesQuery = useQuery({
-    queryKey: queryKeys.access.invites(selectedCompanyId ?? "", "all"),
-    queryFn: () => accessApi.listInvites(selectedCompanyId!),
+  const inviteHistoryQueryKey = queryKeys.access.invites(selectedCompanyId ?? "", "all", INVITE_HISTORY_PAGE_SIZE);
+  const invitesQuery = useInfiniteQuery({
+    queryKey: inviteHistoryQueryKey,
+    queryFn: ({ pageParam }) =>
+      accessApi.listInvites(selectedCompanyId!, {
+        limit: INVITE_HISTORY_PAGE_SIZE,
+        offset: pageParam,
+      }),
     enabled: !!selectedCompanyId,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
   });
+  const inviteHistory = useMemo(
+    () => invitesQuery.data?.pages.flatMap((page) => page.invites) ?? [],
+    [invitesQuery.data?.pages],
+  );
 
   const createInviteMutation = useMutation({
     mutationFn: () =>
@@ -98,7 +111,7 @@ export function CompanyInvites() {
       setLatestInviteCopied(false);
       const copied = await copyInviteUrl(invite.inviteUrl);
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.access.invites(selectedCompanyId!, "all") });
+      await queryClient.invalidateQueries({ queryKey: inviteHistoryQueryKey });
       pushToast({
         title: "Invite created",
         body: copied ? "Invite ready below and copied to clipboard." : "Invite ready below.",
@@ -117,7 +130,7 @@ export function CompanyInvites() {
   const revokeMutation = useMutation({
     mutationFn: (inviteId: string) => accessApi.revokeInvite(inviteId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.access.invites(selectedCompanyId!, "all") });
+      await queryClient.invalidateQueries({ queryKey: inviteHistoryQueryKey });
       pushToast({ title: "Invite revoked", tone: "success" });
     },
     onError: (error) => {
@@ -265,68 +278,82 @@ export function CompanyInvites() {
           </Link>
         </div>
 
-        {(invitesQuery.data ?? []).length === 0 ? (
+        {inviteHistory.length === 0 ? (
           <div className="border-t border-border px-5 py-8 text-sm text-muted-foreground">
             No invites have been created for this company yet.
           </div>
         ) : (
-          <div className="overflow-x-auto border-t border-border">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-5 py-3 font-medium text-muted-foreground">State</th>
-                  <th className="px-5 py-3 font-medium text-muted-foreground">Role</th>
-                  <th className="px-5 py-3 font-medium text-muted-foreground">Invited by</th>
-                  <th className="px-5 py-3 font-medium text-muted-foreground">Created</th>
-                  <th className="px-5 py-3 font-medium text-muted-foreground">Join request</th>
-                  <th className="px-5 py-3 text-right font-medium text-muted-foreground">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invitesQuery.data!.map((invite) => (
-                  <tr key={invite.id} className="border-b border-border last:border-b-0">
-                    <td className="px-5 py-3 align-top">
-                      <span className="inline-flex rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                        {formatInviteState(invite.state)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 align-top">{invite.humanRole ?? "—"}</td>
-                    <td className="px-5 py-3 align-top">
-                      <div>{invite.invitedByUser?.name || invite.invitedByUser?.email || "Unknown inviter"}</div>
-                      {invite.invitedByUser?.email && invite.invitedByUser.name ? (
-                        <div className="text-xs text-muted-foreground">{invite.invitedByUser.email}</div>
-                      ) : null}
-                    </td>
-                    <td className="px-5 py-3 align-top text-muted-foreground">
-                      {new Date(invite.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-5 py-3 align-top">
-                      {invite.relatedJoinRequestId ? (
-                        <Link to="/inbox/requests" className="underline underline-offset-4">
-                          Review request
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-right align-top">
-                      {invite.state === "active" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => revokeMutation.mutate(invite.id)}
-                          disabled={revokeMutation.isPending}
-                        >
-                          Revoke
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Inactive</span>
-                      )}
-                    </td>
+          <div className="border-t border-border">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-5 py-3 font-medium text-muted-foreground">State</th>
+                    <th className="px-5 py-3 font-medium text-muted-foreground">Role</th>
+                    <th className="px-5 py-3 font-medium text-muted-foreground">Invited by</th>
+                    <th className="px-5 py-3 font-medium text-muted-foreground">Created</th>
+                    <th className="px-5 py-3 font-medium text-muted-foreground">Join request</th>
+                    <th className="px-5 py-3 text-right font-medium text-muted-foreground">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {inviteHistory.map((invite) => (
+                    <tr key={invite.id} className="border-b border-border last:border-b-0">
+                      <td className="px-5 py-3 align-top">
+                        <span className="inline-flex rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                          {formatInviteState(invite.state)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 align-top">{invite.humanRole ?? "—"}</td>
+                      <td className="px-5 py-3 align-top">
+                        <div>{invite.invitedByUser?.name || invite.invitedByUser?.email || "Unknown inviter"}</div>
+                        {invite.invitedByUser?.email && invite.invitedByUser.name ? (
+                          <div className="text-xs text-muted-foreground">{invite.invitedByUser.email}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-5 py-3 align-top text-muted-foreground">
+                        {new Date(invite.createdAt).toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 align-top">
+                        {invite.relatedJoinRequestId ? (
+                          <Link to="/inbox/requests" className="underline underline-offset-4">
+                            Review request
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right align-top">
+                        {invite.state === "active" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => revokeMutation.mutate(invite.id)}
+                            disabled={revokeMutation.isPending}
+                          >
+                            Revoke
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Inactive</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {invitesQuery.hasNextPage ? (
+              <div className="flex justify-center border-t border-border px-5 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => invitesQuery.fetchNextPage()}
+                  disabled={invitesQuery.isFetchingNextPage}
+                >
+                  {invitesQuery.isFetchingNextPage ? "Loading more…" : "View more"}
+                </Button>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

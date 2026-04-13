@@ -156,6 +156,11 @@ export type CompanyInviteRecord = {
   relatedJoinRequestId: string | null;
 };
 
+export type CompanyInviteListResponse = {
+  invites: CompanyInviteRecord[];
+  nextOffset: number | null;
+};
+
 export type CompanyJoinRequest = JoinRequest & {
   requesterUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
   approvedByUser: { id: string; email: string | null; name: string | null; image: string | null } | null;
@@ -216,6 +221,19 @@ export type CurrentBoardAccess = {
   keyId: string | null;
 };
 
+function buildInviteListQuery(options: {
+  state?: "active" | "revoked" | "accepted" | "expired";
+  limit?: number;
+  offset?: number;
+}) {
+  const params = new URLSearchParams();
+  if (options.state) params.set("state", options.state);
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export const accessApi = {
   createCompanyInvite: (
     companyId: string,
@@ -251,10 +269,14 @@ export const accessApi = {
 
   listInvites: (
     companyId: string,
-    state?: "active" | "revoked" | "accepted" | "expired",
+    options: {
+      state?: "active" | "revoked" | "accepted" | "expired";
+      limit?: number;
+      offset?: number;
+    } = {},
   ) =>
-    api.get<CompanyInviteRecord[]>(
-      `/companies/${companyId}/invites${state ? `?state=${state}` : ""}`,
+    api.get<CompanyInviteListResponse>(
+      `/companies/${companyId}/invites${buildInviteListQuery(options)}`,
     ),
 
   revokeInvite: (inviteId: string) => api.post(`/invites/${inviteId}/revoke`, {}),

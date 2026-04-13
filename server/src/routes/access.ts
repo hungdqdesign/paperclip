@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   assets,
@@ -1033,25 +1033,74 @@ async function loadCompanyMemberRecords(db: Db, companyId: string) {
   }));
 }
 
-async function loadCompanyInviteRecords(db: Db, companyId: string) {
+function inviteStateWhereClause(
+  state: "active" | "accepted" | "expired" | "revoked" | undefined,
+) {
+  const now = new Date();
+  switch (state) {
+    case "active":
+      return and(
+        isNull(invites.revokedAt),
+        isNull(invites.acceptedAt),
+        gt(invites.expiresAt, now),
+      );
+    case "accepted":
+      return isNotNull(invites.acceptedAt);
+    case "expired":
+      return and(
+        isNull(invites.revokedAt),
+        isNull(invites.acceptedAt),
+        lte(invites.expiresAt, now),
+      );
+    case "revoked":
+      return isNotNull(invites.revokedAt);
+    default:
+      return undefined;
+  }
+}
+
+async function loadCompanyInviteRecords(
+  db: Db,
+  companyId: string,
+  options: {
+    state?: "active" | "accepted" | "expired" | "revoked";
+    limit: number;
+    offset: number;
+  },
+) {
+  const whereClause = inviteStateWhereClause(options.state);
   const rows = await db
     .select()
     .from(invites)
-    .where(eq(invites.companyId, companyId))
-    .orderBy(desc(invites.createdAt));
+    .where(whereClause ? and(eq(invites.companyId, companyId), whereClause) : eq(invites.companyId, companyId))
+    .orderBy(desc(invites.createdAt))
+    .limit(options.limit + 1)
+    .offset(options.offset);
+  const hasMore = rows.length > options.limit;
+  const visibleRows = hasMore ? rows.slice(0, options.limit) : rows;
   const userIds = [
     ...new Set(
-      rows
+      visibleRows
         .map((invite) => invite.invitedByUserId)
         .filter((value): value is string => Boolean(value)),
     ),
   ];
   const [userMap, joinRows, companyName] = await Promise.all([
     loadUsersById(db, userIds),
-    db
-      .select({ id: joinRequests.id, inviteId: joinRequests.inviteId })
-      .from(joinRequests)
-      .where(eq(joinRequests.companyId, companyId)),
+    visibleRows.length
+      ? db
+          .select({ id: joinRequests.id, inviteId: joinRequests.inviteId })
+          .from(joinRequests)
+          .where(
+            and(
+              eq(joinRequests.companyId, companyId),
+              inArray(
+                joinRequests.inviteId,
+                visibleRows.map((invite) => invite.id),
+              ),
+            ),
+          )
+      : Promise.resolve([]),
     db
       .select({ name: companies.name })
       .from(companies)
@@ -1062,17 +1111,20 @@ async function loadCompanyInviteRecords(db: Db, companyId: string) {
     joinRows.map((row: { inviteId: string; id: string }) => [row.inviteId, row.id]),
   );
 
-  return rows.map((invite) => ({
-    ...invite,
-    companyName,
-    humanRole: extractInviteHumanRole(invite),
-    inviteMessage: extractInviteMessage(invite),
-    state: inviteState(invite),
-    invitedByUser: invite.invitedByUserId
-      ? userMap.get(invite.invitedByUserId) ?? null
-      : null,
-    relatedJoinRequestId: joinRequestIdByInviteId.get(invite.id) ?? null,
-  }));
+  return {
+    invites: visibleRows.map((invite) => ({
+      ...invite,
+      companyName,
+      humanRole: extractInviteHumanRole(invite),
+      inviteMessage: extractInviteMessage(invite),
+      state: inviteState(invite),
+      invitedByUser: invite.invitedByUserId
+        ? userMap.get(invite.invitedByUserId) ?? null
+        : null,
+      relatedJoinRequestId: joinRequestIdByInviteId.get(invite.id) ?? null,
+    })),
+    nextOffset: hasMore ? options.offset + options.limit : null,
+  };
 }
 
 async function loadJoinRequestRecords(db: Db, companyId: string) {
@@ -3110,12 +3162,8 @@ export function accessRoutes(
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:invite");
     const query = listCompanyInvitesQuerySchema.parse(req.query);
-    const invitesForCompany = await loadCompanyInviteRecords(db, companyId);
-    res.json(
-      invitesForCompany.filter((invite) =>
-        query.state ? invite.state === query.state : true,
-      ),
-    );
+    const invitesForCompany = await loadCompanyInviteRecords(db, companyId, query);
+    res.json(invitesForCompany);
   });
 
   router.get("/companies/:companyId/join-requests", async (req, res) => {

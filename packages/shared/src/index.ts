@@ -311,6 +311,7 @@ export type {
   CompanyMemberRecord,
   CompanyMembersResponse,
   CompanyMembership,
+  CompanyInviteListResponse,
   CompanyInviteRecord,
   PrincipalPermissionGrant,
   Invite,

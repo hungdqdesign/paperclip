@@ -85,6 +85,11 @@ export interface CompanyInviteRecord extends Invite {
   relatedJoinRequestId: string | null;
 }
 
+export interface CompanyInviteListResponse {
+  invites: CompanyInviteRecord[];
+  nextOffset: number | null;
+}
+
 export interface JoinRequest {
   id: string;
   inviteId: string;
