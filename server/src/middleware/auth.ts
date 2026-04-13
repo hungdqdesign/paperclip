@@ -18,6 +18,13 @@ interface ActorMiddlewareOptions {
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
 }
 
+function shouldResolveBoardSession(req: Request): boolean {
+  // Only API routes consume req.actor. Skipping session resolution for
+  // document/static requests avoids unnecessary Better Auth work on each
+  // Vite-served page load in authenticated dev mode.
+  return req.path.startsWith("/api");
+}
+
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
   return async (req, _res, next) => {
@@ -30,7 +37,11 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 
     const authHeader = req.header("authorization");
     if (!authHeader?.toLowerCase().startsWith("bearer ")) {
-      if (opts.deploymentMode === "authenticated" && opts.resolveSession) {
+      if (
+        opts.deploymentMode === "authenticated" &&
+        opts.resolveSession &&
+        shouldResolveBoardSession(req)
+      ) {
         let session: BetterAuthSessionResult | null = null;
         try {
           session = await opts.resolveSession(req);
