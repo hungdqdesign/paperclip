@@ -1,7 +1,6 @@
 [build]
-  base = "ui"
-  command = "pnpm install && pnpm build"
-  publish = "dist"
+  command = "pnpm install && pnpm --filter @paperclipai/ui... build"
+  publish = "ui/dist"
 
 [[redirects]]
   from = "/api/*"
