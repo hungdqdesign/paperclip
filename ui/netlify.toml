@@ -4,7 +4,7 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "https://paperclip.openclawbot.vn/api/:splat"
+  to = "http://103.142.26.240:3100/api/:splat"
   status = 200
   force = true
 
