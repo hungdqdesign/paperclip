@@ -355,61 +355,89 @@ export function OrgChart() {
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
+      {/* Onboarding hint */}
+      {showHint && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2 text-xs text-muted-foreground shadow-md select-none">
+          <span>Cuộn để zoom · Kéo để di chuyển · Click để mở agent</span>
+          <button
+            onClick={dismissHint}
+            className="ml-1 rounded hover:text-foreground transition-colors"
+            aria-label="Đóng gợi ý"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Zoom controls */}
       <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
-        <button
-          className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-sm hover:bg-accent transition-colors"
-          onClick={() => {
-            const newZoom = Math.min(zoom * 1.2, 2);
-            const container = containerRef.current;
-            if (container) {
-              const cx = container.clientWidth / 2;
-              const cy = container.clientHeight / 2;
-              const scale = newZoom / zoom;
-              setPan({ x: cx - scale * (cx - pan.x), y: cy - scale * (cy - pan.y) });
-            }
-            setZoom(newZoom);
-          }}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <button
-          className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-sm hover:bg-accent transition-colors"
-          onClick={() => {
-            const newZoom = Math.max(zoom * 0.8, 0.2);
-            const container = containerRef.current;
-            if (container) {
-              const cx = container.clientWidth / 2;
-              const cy = container.clientHeight / 2;
-              const scale = newZoom / zoom;
-              setPan({ x: cx - scale * (cx - pan.x), y: cy - scale * (cy - pan.y) });
-            }
-            setZoom(newZoom);
-          }}
-          aria-label="Zoom out"
-        >
-          &minus;
-        </button>
-        <button
-          className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-[10px] hover:bg-accent transition-colors"
-          onClick={() => {
-            if (!containerRef.current) return;
-            const cW = containerRef.current.clientWidth;
-            const cH = containerRef.current.clientHeight;
-            const scaleX = (cW - 40) / bounds.width;
-            const scaleY = (cH - 40) / bounds.height;
-            const fitZoom = Math.min(scaleX, scaleY, 1);
-            const chartW = bounds.width * fitZoom;
-            const chartH = bounds.height * fitZoom;
-            setZoom(fitZoom);
-            setPan({ x: (cW - chartW) / 2, y: (cH - chartH) / 2 });
-          }}
-          title="Fit to screen"
-          aria-label="Fit chart to screen"
-        >
-          Fit
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-sm hover:bg-accent transition-colors"
+              onClick={() => {
+                const newZoom = Math.min(zoom * 1.2, 2);
+                const container = containerRef.current;
+                if (container) {
+                  const cx = container.clientWidth / 2;
+                  const cy = container.clientHeight / 2;
+                  const scale = newZoom / zoom;
+                  setPan({ x: cx - scale * (cx - pan.x), y: cy - scale * (cy - pan.y) });
+                }
+                setZoom(newZoom);
+              }}
+              aria-label="Phóng to"
+            >
+              +
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Phóng to</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-sm hover:bg-accent transition-colors"
+              onClick={() => {
+                const newZoom = Math.max(zoom * 0.8, 0.2);
+                const container = containerRef.current;
+                if (container) {
+                  const cx = container.clientWidth / 2;
+                  const cy = container.clientHeight / 2;
+                  const scale = newZoom / zoom;
+                  setPan({ x: cx - scale * (cx - pan.x), y: cy - scale * (cy - pan.y) });
+                }
+                setZoom(newZoom);
+              }}
+              aria-label="Thu nhỏ"
+            >
+              &minus;
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Thu nhỏ</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="w-7 h-7 flex items-center justify-center bg-background border border-border rounded text-[10px] hover:bg-accent transition-colors"
+              onClick={() => {
+                if (!containerRef.current) return;
+                const cW = containerRef.current.clientWidth;
+                const cH = containerRef.current.clientHeight;
+                const scaleX = (cW - 40) / bounds.width;
+                const scaleY = (cH - 40) / bounds.height;
+                const fitZoom = Math.min(scaleX, scaleY, 1);
+                const chartW = bounds.width * fitZoom;
+                const chartH = bounds.height * fitZoom;
+                setZoom(fitZoom);
+                setPan({ x: (cW - chartW) / 2, y: (cH - chartH) / 2 });
+              }}
+              aria-label="Vừa màn hình"
+            >
+              Fit
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Vừa màn hình</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* SVG layer for edges */}
@@ -472,10 +500,15 @@ export function OrgChart() {
                   <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
                     <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
                   </div>
-                  <span
-                    className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
-                    style={{ backgroundColor: dotColor }}
-                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card cursor-default"
+                        style={{ backgroundColor: dotColor }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">{node.status}</TooltipContent>
+                  </Tooltip>
                 </div>
                 {/* Name + role + adapter type */}
                 <div className="flex flex-col items-start min-w-0 flex-1">
