@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Moon, Network, Sun, Upload, X } from "lucide-react";
-import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+import { ChevronLeft, ChevronRight, Download, Moon, Network, Sun, Upload, X } from "lucide-react";
+import { AGENT_ROLE_LABELS, AGENT_ROLES, type Agent } from "@paperclipai/shared";
 import { useTheme } from "../context/ThemeContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -188,6 +188,10 @@ export function OrgChart() {
     return { width: maxX + PADDING, height: maxY + PADDING };
   }, [allNodes]);
 
+  // Node panel state
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [dragOverCanvas, setDragOverCanvas] = useState(false);
+
   // Pan & zoom state
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -293,6 +297,28 @@ export function OrgChart() {
     setZoom(newZoom);
   }, [zoom, pan]);
 
+  // Canvas drag-and-drop handlers (for nodes dragged from NodePanel)
+  const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("application/paperclip-role")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDragOverCanvas(true);
+  }, []);
+
+  const handleCanvasDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if leaving the canvas container itself
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOverCanvas(false);
+  }, []);
+
+  const handleCanvasDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverCanvas(false);
+    const role = e.dataTransfer.getData("application/paperclip-role");
+    if (!role) return;
+    navigate(`/agents/new?role=${encodeURIComponent(role)}`);
+  }, [navigate]);
+
   if (!selectedCompanyId) {
     return <EmptyState icon={Network} message="Select a company to view the org chart." />;
   }
@@ -346,16 +372,72 @@ export function OrgChart() {
         </button>
       </div>
     </div>
+    <div className="flex flex-1 min-h-0 gap-2">
+    {/* Node panel */}
+    <div
+      className={cn(
+        "shrink-0 flex flex-col border border-border rounded-lg bg-background overflow-hidden transition-all duration-200",
+        panelOpen ? "w-44" : "w-8"
+      )}
+    >
+      <button
+        onClick={() => setPanelOpen((v) => !v)}
+        className="flex items-center justify-center h-8 border-b border-border hover:bg-accent transition-colors text-muted-foreground hover:text-foreground shrink-0"
+        aria-label={panelOpen ? "Đóng panel" : "Mở panel node"}
+        title={panelOpen ? "Đóng panel" : "Mở panel node"}
+      >
+        {panelOpen ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+      </button>
+      {panelOpen && (
+        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-2 gap-1">
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1 px-1 select-none">
+            Kéo vào canvas
+          </p>
+          {AGENT_ROLES.map((role) => (
+            <div
+              key={role}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/paperclip-role", role);
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+              className="flex items-center gap-2 px-2 py-1.5 rounded cursor-grab active:cursor-grabbing border border-border bg-muted/40 hover:bg-accent hover:border-foreground/20 transition-colors select-none text-xs"
+              title={`Kéo để tạo agent ${AGENT_ROLE_LABELS[role]}`}
+            >
+              <AgentIcon icon={undefined} className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate text-foreground">{AGENT_ROLE_LABELS[role]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    {/* Canvas */}
     <div
       ref={containerRef}
-      className="flow-canvas w-full flex-1 min-h-0 overflow-hidden relative bg-muted/30 dark:bg-background border border-border rounded-lg"
+      className={cn(
+        "flow-canvas flex-1 min-h-0 overflow-hidden relative bg-muted/30 dark:bg-background border rounded-lg transition-colors",
+        dragOverCanvas ? "border-primary/60 bg-primary/5" : "border-border"
+      )}
       style={{ cursor: dragging ? "grabbing" : "grab" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onDragOver={handleCanvasDragOver}
+      onDragLeave={handleCanvasDragLeave}
+      onDrop={handleCanvasDrop}
     >
+      {/* Drop overlay message */}
+      {dragOverCanvas && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+          <div className="bg-background/90 backdrop-blur-sm border border-primary/40 rounded-lg px-5 py-3 text-sm font-medium text-primary shadow-md">
+            Thả để tạo agent mới
+          </div>
+        </div>
+      )}
+
       {/* Onboarding hint */}
       {showHint && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2 text-xs text-muted-foreground shadow-md select-none">
@@ -549,6 +631,7 @@ export function OrgChart() {
           );
         })}
       </div>
+    </div>
     </div>
     </div>
   </TooltipProvider>

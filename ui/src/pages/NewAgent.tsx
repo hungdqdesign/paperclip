@@ -57,10 +57,16 @@ export function NewAgent() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const presetAdapterType = searchParams.get("adapterType");
+  const presetRole = searchParams.get("role");
 
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
-  const [role, setRole] = useState("general");
+  const [role, setRole] = useState(() => {
+    if (presetRole && AGENT_ROLES.includes(presetRole as (typeof AGENT_ROLES)[number])) {
+      return presetRole;
+    }
+    return "general";
+  });
   const [reportsTo, setReportsTo] = useState<string | null>(null);
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
