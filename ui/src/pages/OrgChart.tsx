@@ -184,25 +184,43 @@ export function OrgChart() {
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (hasInitialized.current || allNodes.length === 0 || !containerRef.current) return;
-    hasInitialized.current = true;
 
     const container = containerRef.current;
-    const containerW = container.clientWidth;
-    const containerH = container.clientHeight;
 
-    // Fit chart to container
-    const scaleX = (containerW - 40) / bounds.width;
-    const scaleY = (containerH - 40) / bounds.height;
-    const fitZoom = Math.min(scaleX, scaleY, 1);
+    const doFit = (width: number, height: number) => {
+      if (hasInitialized.current) return;
+      hasInitialized.current = true;
 
-    const chartW = bounds.width * fitZoom;
-    const chartH = bounds.height * fitZoom;
+      const scaleX = (width - 40) / bounds.width;
+      const scaleY = (height - 40) / bounds.height;
+      const fitZoom = Math.min(scaleX, scaleY, 1);
 
-    setZoom(fitZoom);
-    setPan({
-      x: (containerW - chartW) / 2,
-      y: (containerH - chartH) / 2,
+      const chartW = bounds.width * fitZoom;
+      const chartH = bounds.height * fitZoom;
+
+      setZoom(fitZoom);
+      setPan({
+        x: (width - chartW) / 2,
+        y: (height - chartH) / 2,
+      });
+    };
+
+    // If the container already has dimensions, fit immediately
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      doFit(container.clientWidth, container.clientHeight);
+      return;
+    }
+
+    // Otherwise wait for the container to be laid out
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) {
+        doFit(width, height);
+        ro.disconnect();
+      }
     });
+    ro.observe(container);
+    return () => ro.disconnect();
   }, [allNodes, bounds]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
