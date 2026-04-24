@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -9,14 +9,18 @@ import { EntityRow } from "../components/EntityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { formatDate, projectUrl } from "../lib/utils";
+import { cn, formatDate, projectUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Hexagon, Plus } from "lucide-react";
+import type { ProjectStatus } from "@paperclipai/shared";
+
+const PROJECT_STATUS_OPTIONS: ProjectStatus[] = ["backlog", "planned", "in_progress", "completed", "cancelled"];
 
 export function Projects() {
   const { selectedCompanyId } = useCompany();
   const { openNewProject } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -27,10 +31,11 @@ export function Projects() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
-  const projects = useMemo(
-    () => (allProjects ?? []).filter((p) => !p.archivedAt),
-    [allProjects],
-  );
+  const projects = useMemo(() => {
+    const active = (allProjects ?? []).filter((p) => !p.archivedAt);
+    if (!statusFilter) return active;
+    return active.filter((p) => p.status === statusFilter);
+  }, [allProjects, statusFilter]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
@@ -42,7 +47,34 @@ export function Projects() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 flex-wrap">
+          <button
+            onClick={() => setStatusFilter(null)}
+            className={cn(
+              "px-2.5 py-1 text-xs rounded-md font-medium transition-colors",
+              statusFilter === null
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            All
+          </button>
+          {PROJECT_STATUS_OPTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+              className={cn(
+                "px-2.5 py-1 text-xs rounded-md font-medium transition-colors capitalize",
+                statusFilter === s
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+            >
+              {s.replace("_", " ")}
+            </button>
+          ))}
+        </div>
         <Button size="sm" variant="outline" onClick={openNewProject}>
           <Plus className="h-4 w-4 mr-1" />
           Add Project
