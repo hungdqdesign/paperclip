@@ -21,6 +21,7 @@ import { SIDEBAR_SCROLL_RESET_STATE } from "../lib/navigation-scroll";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, projectRouteRef } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { getRecentProjectIds, sortProjectsByRecency, trackRecentProject } from "../lib/recent-projects";
 import { BudgetSidebarMarker } from "./BudgetSidebarMarker";
 import {
   Collapsible,
@@ -29,6 +30,8 @@ import {
 } from "@/components/ui/collapsible";
 import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import type { Project } from "@paperclipai/shared";
+
+const MAX_SIDEBAR_PROJECTS = 10;
 
 type ProjectSidebarSlot = ReturnType<typeof usePluginSlots>["slots"][number];
 
@@ -81,6 +84,7 @@ function SortableProjectItem({
               e.preventDefault();
               return;
             }
+            trackRecentProject(project.id);
             if (isMobile) setSidebarOpen(false);
           }}
           className={cn(
@@ -156,6 +160,15 @@ export function SidebarProjects() {
     userId: currentUserId,
   });
 
+  const recentProjectIds = useMemo(() => getRecentProjectIds(), []);
+  const topProjects = useMemo(() => {
+    const sorted = recentProjectIds.length > 0
+      ? sortProjectsByRecency(orderedProjects, recentProjectIds)
+      : orderedProjects;
+    return sorted.slice(0, MAX_SIDEBAR_PROJECTS);
+  }, [orderedProjects, recentProjectIds]);
+  const hasMore = orderedProjects.length > MAX_SIDEBAR_PROJECTS;
+
   const projectMatch = location.pathname.match(/^\/(?:[^/]+\/)?projects\/([^/]+)/);
   const activeProjectRef = projectMatch?.[1] ?? null;
   const sensors = useSensors(
@@ -215,11 +228,11 @@ export function SidebarProjects() {
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={orderedProjects.map((project) => project.id)}
+            items={topProjects.map((project) => project.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className="flex flex-col gap-0.5 mt-0.5">
-              {orderedProjects.map((project: Project) => (
+              {topProjects.map((project: Project) => (
                 <SortableProjectItem
                   key={project.id}
                   activeProjectRef={activeProjectRef}
@@ -234,6 +247,15 @@ export function SidebarProjects() {
             </div>
           </SortableContext>
         </DndContext>
+        {hasMore && (
+          <NavLink
+            to="/projects"
+            onClick={() => { if (isMobile) setSidebarOpen(false); }}
+            className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-muted-foreground/60 hover:text-foreground transition-colors"
+          >
+            <span>+{orderedProjects.length - MAX_SIDEBAR_PROJECTS} more projects</span>
+          </NavLink>
+        )}
       </CollapsibleContent>
     </Collapsible>
   );
