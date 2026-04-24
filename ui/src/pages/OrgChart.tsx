@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
@@ -485,7 +486,12 @@ export function OrgChart() {
             <div
               key={node.id}
               data-org-card
-              className="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] duration-150 cursor-pointer select-none"
+              className={cn(
+                "absolute bg-card border rounded-lg shadow-sm hover:shadow-md transition-[box-shadow,border-color] duration-150 cursor-pointer select-none",
+                node.status === "running"
+                  ? "border-cyan-500/40 shadow-[0_0_0_1px_rgba(34,211,238,0.15)]"
+                  : "border-border hover:border-foreground/20"
+              )}
               style={{
                 left: node.x,
                 top: node.y,
@@ -502,10 +508,19 @@ export function OrgChart() {
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span
-                        className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card cursor-default"
-                        style={{ backgroundColor: dotColor }}
-                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 cursor-default">
+                        {node.status === "running" ? (
+                          <span className="relative flex h-3 w-3">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+                            <span className="relative inline-flex h-3 w-3 rounded-full border-2 border-card bg-cyan-500" />
+                          </span>
+                        ) : (
+                          <span
+                            className="block h-3 w-3 rounded-full border-2 border-card"
+                            style={{ backgroundColor: dotColor }}
+                          />
+                        )}
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">{node.status}</TooltipContent>
                   </Tooltip>
