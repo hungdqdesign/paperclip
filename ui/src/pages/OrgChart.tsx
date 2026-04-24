@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { companiesApi } from "../api/companies";
 import { useCompany } from "../context/CompanyContext";
+import { InlineEditor } from "../components/InlineEditor";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { agentUrl } from "../lib/utils";
@@ -10,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Moon, Network, Sun, Upload } from "lucide-react";
+import { Download, Moon, Network, Sun, Upload, X } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 import { useTheme } from "../context/ThemeContext";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Layout constants
 const CARD_W = 200;
@@ -132,10 +135,19 @@ const defaultDotColor = "#a3a3a3";
 // ── Main component ──────────────────────────────────────────────────────
 
 export function OrgChart() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const queryClient = useQueryClient();
+
+  const renameCompany = useMutation({
+    mutationFn: (name: string) =>
+      companiesApi.update(selectedCompanyId!, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    },
+  });
 
   const { data: orgTree, isLoading } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
@@ -181,6 +193,20 @@ export function OrgChart() {
   const [zoom, setZoom] = useState(1);
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  // Onboarding hint — shown once per browser (localStorage-persisted)
+  const [showHint, setShowHint] = useState(() => {
+    try { return !localStorage.getItem("paperclip-orgchart-hint-dismissed"); } catch { return true; }
+  });
+  const dismissHint = useCallback(() => {
+    try { localStorage.setItem("paperclip-orgchart-hint-dismissed", "1"); } catch {}
+    setShowHint(false);
+  }, []);
+  useEffect(() => {
+    if (!showHint) return;
+    const t = setTimeout(dismissHint, 8000);
+    return () => clearTimeout(t);
+  }, [showHint, dismissHint]);
 
   // Center the chart on first load
   const hasInitialized = useRef(false);
@@ -279,34 +305,45 @@ export function OrgChart() {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col h-full">
-    <div className="mb-2 flex items-center justify-between shrink-0">
-      <div className="flex items-center gap-2">
-        <Link to="/company/import">
-          <Button variant="outline" size="sm">
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            Import company
-          </Button>
-        </Link>
-        <Link to="/company/export">
-          <Button variant="outline" size="sm">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Export company
-          </Button>
-        </Link>
+    <div className="mb-2 shrink-0 space-y-1.5">
+      {selectedCompany && (
+        <InlineEditor
+          value={selectedCompany.name}
+          onSave={(name) => renameCompany.mutate(name)}
+          as="h2"
+          className="text-lg font-semibold"
+        />
+      )}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link to="/company/import">
+            <Button variant="outline" size="sm">
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
+              Import company
+            </Button>
+          </Link>
+          <Link to="/company/export">
+            <Button variant="outline" size="sm">
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export company
+            </Button>
+          </Link>
+        </div>
+        <button
+          onClick={toggleTheme}
+          className="w-7 h-7 flex items-center justify-center border border-border rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {theme === "dark" ? (
+            <Sun className="h-3.5 w-3.5" />
+          ) : (
+            <Moon className="h-3.5 w-3.5" />
+          )}
+        </button>
       </div>
-      <button
-        onClick={toggleTheme}
-        className="w-7 h-7 flex items-center justify-center border border-border rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {theme === "dark" ? (
-          <Sun className="h-3.5 w-3.5" />
-        ) : (
-          <Moon className="h-3.5 w-3.5" />
-        )}
-      </button>
     </div>
     <div
       ref={containerRef}
@@ -466,6 +503,7 @@ export function OrgChart() {
       </div>
     </div>
     </div>
+  </TooltipProvider>
   );
 }
 
