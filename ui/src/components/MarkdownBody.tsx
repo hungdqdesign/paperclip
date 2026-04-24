@@ -117,6 +117,13 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
           theme: darkMode ? "dark" : "default",
           fontFamily: "inherit",
           suppressErrorRendering: true,
+          flowchart: {
+            wrappingWidth: 200,
+            useMaxWidth: true,
+          },
+          sequence: {
+            useMaxWidth: true,
+          },
         });
         const rendered = await mermaid.render(`paperclip-mermaid-${renderId}`, source);
         if (!active) return;

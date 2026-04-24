@@ -803,6 +803,19 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   height: auto;
 }
 
+/* Auto-wrap long node labels in Mermaid flowcharts (PAP-156) */
+.paperclip-mermaid svg .nodeLabel,
+.paperclip-mermaid svg .label,
+.paperclip-mermaid svg foreignObject > div {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.paperclip-mermaid svg .node foreignObject {
+  overflow: visible;
+}
+
 .paperclip-mermaid-status {
   margin: 0 0 0.45rem;
   font-size: 0.75rem;
