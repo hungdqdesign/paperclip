@@ -123,6 +123,46 @@ function collectEdges(nodes: LayoutNode[]): Array<{ parent: LayoutNode; child: L
 
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 
+// ── Viewport persistence ─────────────────────────────────────────────────
+
+const VIEWPORT_AUTOSAVE_DEBOUNCE_MS = 3000;
+
+function getViewportStorageKey(companyId: string) {
+  return `paperclip:flow-diagram-viewport:${companyId}`;
+}
+
+function loadSavedViewport(companyId: string): { pan: { x: number; y: number }; zoom: number } | null {
+  try {
+    const raw = localStorage.getItem(getViewportStorageKey(companyId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "pan" in parsed &&
+      "zoom" in parsed &&
+      parsed.pan !== null &&
+      typeof parsed.pan === "object" &&
+      "x" in parsed.pan &&
+      "y" in parsed.pan &&
+      typeof (parsed as { pan: { x: unknown } }).pan.x === "number" &&
+      typeof (parsed as { pan: { y: unknown } }).pan.y === "number" &&
+      typeof (parsed as { zoom: unknown }).zoom === "number" &&
+      (parsed as { zoom: number }).zoom > 0
+    ) {
+      const p = parsed as { pan: { x: number; y: number }; zoom: number };
+      return { pan: { x: p.pan.x, y: p.pan.y }, zoom: p.zoom };
+    }
+  } catch {}
+  return null;
+}
+
+function saveViewport(companyId: string, pan: { x: number; y: number }, zoom: number) {
+  try {
+    localStorage.setItem(getViewportStorageKey(companyId), JSON.stringify({ pan, zoom }));
+  } catch {}
+}
+
 const statusDotColor: Record<string, string> = {
   running: "#22d3ee",
   active: "#4ade80",
@@ -196,6 +236,8 @@ export function OrgChart() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [viewportReady, setViewportReady] = useState(false);
+  const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
@@ -213,17 +255,45 @@ export function OrgChart() {
     return () => clearTimeout(t);
   }, [showHint, dismissHint]);
 
-  // Center the chart on first load
+  // Auto-save viewport (pan + zoom) to localStorage with 3s debounce
+  useEffect(() => {
+    if (!viewportReady || !selectedCompanyId) return;
+    if (viewportSaveTimerRef.current) {
+      clearTimeout(viewportSaveTimerRef.current);
+    }
+    viewportSaveTimerRef.current = setTimeout(() => {
+      saveViewport(selectedCompanyId, pan, zoom);
+    }, VIEWPORT_AUTOSAVE_DEBOUNCE_MS);
+    return () => {
+      if (viewportSaveTimerRef.current) {
+        clearTimeout(viewportSaveTimerRef.current);
+      }
+    };
+  }, [pan, zoom, viewportReady, selectedCompanyId]);
+
+  // Center the chart on first load, or restore saved viewport
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (hasInitialized.current || allNodes.length === 0 || !containerRef.current) return;
 
     const container = containerRef.current;
 
-    const doFit = (width: number, height: number) => {
+    const doInit = (width: number, height: number) => {
       if (hasInitialized.current) return;
       hasInitialized.current = true;
 
+      // Restore saved viewport if available
+      if (selectedCompanyId) {
+        const saved = loadSavedViewport(selectedCompanyId);
+        if (saved) {
+          setZoom(saved.zoom);
+          setPan(saved.pan);
+          setViewportReady(true);
+          return;
+        }
+      }
+
+      // Fall back to fit-to-screen
       const scaleX = (width - 40) / bounds.width;
       const scaleY = (height - 40) / bounds.height;
       const fitZoom = Math.min(scaleX, scaleY, 1);
@@ -236,11 +306,12 @@ export function OrgChart() {
         x: (width - chartW) / 2,
         y: (height - chartH) / 2,
       });
+      setViewportReady(true);
     };
 
-    // If the container already has dimensions, fit immediately
+    // If the container already has dimensions, init immediately
     if (container.clientWidth > 0 && container.clientHeight > 0) {
-      doFit(container.clientWidth, container.clientHeight);
+      doInit(container.clientWidth, container.clientHeight);
       return;
     }
 
@@ -248,13 +319,13 @@ export function OrgChart() {
     const ro = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       if (width > 0 && height > 0) {
-        doFit(width, height);
+        doInit(width, height);
         ro.disconnect();
       }
     });
     ro.observe(container);
     return () => ro.disconnect();
-  }, [allNodes, bounds]);
+  }, [allNodes, bounds, selectedCompanyId]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
