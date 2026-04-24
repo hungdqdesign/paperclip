@@ -52,6 +52,8 @@ function createProject(): Project {
     goalId: null,
     goalIds: [],
     goals: [],
+    labelIds: [],
+    labels: [],
     name: "Workspace project",
     description: null,
     status: "in_progress",

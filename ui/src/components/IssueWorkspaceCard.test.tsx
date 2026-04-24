@@ -83,6 +83,8 @@ function createProject(): Project {
     goalId: null,
     goalIds: [],
     goals: [],
+    labelIds: [],
+    labels: [],
     name: "Project 1",
     description: null,
     status: "in_progress",

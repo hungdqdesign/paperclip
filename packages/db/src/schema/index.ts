@@ -32,6 +32,7 @@ export { routines, routineTriggers, routineRuns } from "./routines.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
+export { projectLabels } from "./project_labels.js";
 export { issueApprovals } from "./issue_approvals.js";
 export { issueComments } from "./issue_comments.js";
 export { issueExecutionDecisions } from "./issue_execution_decisions.js";

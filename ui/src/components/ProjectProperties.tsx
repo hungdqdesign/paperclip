@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
+import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { goalsApi } from "../api/goals";
 import { instanceSettingsApi } from "../api/instanceSettings";
+import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { secretsApi } from "../api/secrets";
 import { useCompany } from "../context/CompanyContext";
@@ -15,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { AlertCircle, Archive, ArchiveRestore, Check, ExternalLink, Github, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, Archive, ArchiveRestore, Check, ExternalLink, Github, Loader2, Plus, Tag, Trash2, X } from "lucide-react";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { DraftInput } from "./agent-config-primitives";
@@ -223,6 +225,10 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [labelSearch, setLabelSearch] = useState("");
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState("#6366f1");
   const [executionWorkspaceAdvancedOpen, setExecutionWorkspaceAdvancedOpen] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"local" | "repo" | null>(null);
   const [workspaceCwd, setWorkspaceCwd] = useState("");
@@ -243,6 +249,30 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: allLabels } = useQuery({
+    queryKey: queryKeys.issues.labels(selectedCompanyId!),
+    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const createLabel = useMutation({
+    mutationFn: (data: { name: string; color: string }) => issuesApi.createLabel(selectedCompanyId!, data),
+    onSuccess: async (created) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.issues.labels(selectedCompanyId!) });
+      const currentIds = project.labelIds ?? [];
+      onUpdate?.({ labelIds: [...currentIds, created.id] });
+      setNewLabelName("");
+    },
+  });
+
+  const toggleLabel = (labelId: string) => {
+    const currentIds = project.labelIds ?? [];
+    const next = currentIds.includes(labelId)
+      ? currentIds.filter((id) => id !== labelId)
+      : [...currentIds, labelId];
+    onUpdate?.({ labelIds: next });
+  };
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -597,6 +627,113 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     </button>
                   ))
                 )}
+              </PopoverContent>
+            </Popover>
+          )}
+        </PropertyRow>
+        <PropertyRow
+          label={<FieldLabel label="Labels" state="idle" />}
+          alignStart
+          valueClassName="space-y-2"
+        >
+          {(project.labels ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {(project.labels ?? []).map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border"
+                  style={{
+                    borderColor: label.color,
+                    backgroundColor: `${label.color}22`,
+                    color: pickTextColorForPillBg(label.color, 0.13),
+                  }}
+                >
+                  {label.name}
+                  {(onUpdate || onFieldUpdate) && (
+                    <button
+                      type="button"
+                      className="opacity-70 hover:opacity-100"
+                      onClick={() => toggleLabel(label.id)}
+                      aria-label={`Remove label ${label.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {(onUpdate || onFieldUpdate) && (
+            <Popover open={labelOpen} onOpenChange={(open) => { setLabelOpen(open); if (!open) setLabelSearch(""); }}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className={cn("h-6 w-fit px-2", (project.labels ?? []).length > 0 && "ml-1")}
+                >
+                  <Tag className="h-3 w-3 mr-1" />
+                  Label
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-52 p-1" align="start">
+                <input
+                  className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                  placeholder="Search labels..."
+                  value={labelSearch}
+                  onChange={(e) => setLabelSearch(e.target.value)}
+                  autoFocus
+                />
+                <div className="max-h-44 overflow-y-auto overscroll-contain space-y-0.5">
+                  {(allLabels ?? [])
+                    .filter((label) => !labelSearch.trim() || label.name.toLowerCase().includes(labelSearch.toLowerCase()))
+                    .map((label) => {
+                      const selected = (project.labelIds ?? []).includes(label.id);
+                      return (
+                        <button
+                          key={label.id}
+                          className={cn(
+                            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
+                            selected && "bg-accent",
+                          )}
+                          onClick={() => toggleLabel(label.id)}
+                        >
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: label.color }} />
+                          <span className="truncate">{label.name}</span>
+                          {selected && <Check className="h-3 w-3 ml-auto shrink-0" />}
+                        </button>
+                      );
+                    })}
+                </div>
+                <div className="mt-2 border-t border-border pt-2 space-y-1 px-1">
+                  <div className="flex items-center gap-1">
+                    <input
+                      className="h-7 w-7 p-0 rounded bg-transparent cursor-pointer"
+                      type="color"
+                      value={newLabelColor}
+                      onChange={(e) => setNewLabelColor(e.target.value)}
+                    />
+                    <input
+                      className="flex-1 px-2 py-1 text-xs bg-transparent outline-none border border-border rounded placeholder:text-muted-foreground/50"
+                      placeholder="New label name"
+                      value={newLabelName}
+                      onChange={(e) => setNewLabelName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newLabelName.trim()) {
+                          createLabel.mutate({ name: newLabelName.trim(), color: newLabelColor });
+                        }
+                      }}
+                    />
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="h-7 px-1.5 shrink-0"
+                      disabled={!newLabelName.trim() || createLabel.isPending}
+                      onClick={() => createLabel.mutate({ name: newLabelName.trim(), color: newLabelColor })}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
               </PopoverContent>
             </Popover>
           )}

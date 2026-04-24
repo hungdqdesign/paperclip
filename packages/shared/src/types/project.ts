@@ -5,6 +5,7 @@ import type {
   WorkspaceRuntimeService,
 } from "./workspace-runtime.js";
 import type { AgentEnvConfig } from "./secrets.js";
+import type { IssueLabel } from "./issue.js";
 
 export type ProjectWorkspaceSourceType = "local_path" | "git_repo" | "remote_managed" | "non_git_path";
 export type ProjectWorkspaceVisibility = "default" | "advanced";
@@ -60,6 +61,8 @@ export interface Project {
   goalId: string | null;
   goalIds: string[];
   goals: ProjectGoalRef[];
+  labelIds: string[];
+  labels: IssueLabel[];
   name: string;
   description: string | null;
   status: ProjectStatus;
