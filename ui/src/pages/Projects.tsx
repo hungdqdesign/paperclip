@@ -16,6 +16,7 @@ import { Hexagon, Plus } from "lucide-react";
 import type { ProjectStatus } from "@paperclipai/shared";
 
 const PROJECT_STATUS_OPTIONS: ProjectStatus[] = ["backlog", "planned", "in_progress", "completed", "cancelled"];
+const PAGE_SIZE = 20;
 
 export function Projects() {
   const { selectedCompanyId } = useCompany();
@@ -23,6 +24,7 @@ export function Projects() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | null>(null);
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -60,6 +62,9 @@ export function Projects() {
     return byStatus.filter((p) => (p.labelIds ?? []).includes(labelFilter));
   }, [allProjects, statusFilter, labelFilter]);
 
+  const totalPages = Math.ceil(projects.length / PAGE_SIZE);
+  const paginatedProjects = projects.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
   if (!selectedCompanyId) {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
   }
@@ -73,7 +78,7 @@ export function Projects() {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1 flex-wrap">
           <button
-            onClick={() => setStatusFilter(null)}
+            onClick={() => { setStatusFilter(null); setLabelFilter(null); setCurrentPage(0); }}
             className={cn(
               "px-2.5 py-1 text-xs rounded-md font-medium transition-colors",
               statusFilter === null && labelFilter === null
@@ -86,7 +91,7 @@ export function Projects() {
           {PROJECT_STATUS_OPTIONS.map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+              onClick={() => { setStatusFilter(statusFilter === s ? null : s); setCurrentPage(0); }}
               className={cn(
                 "px-2.5 py-1 text-xs rounded-md font-medium transition-colors capitalize",
                 statusFilter === s
@@ -103,7 +108,7 @@ export function Projects() {
           {usedLabels.map((label) => (
             <button
               key={label.id}
-              onClick={() => setLabelFilter(labelFilter === label.id ? null : label.id)}
+              onClick={() => { setLabelFilter(labelFilter === label.id ? null : label.id); setCurrentPage(0); }}
               className={cn(
                 "inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border font-medium transition-colors",
                 labelFilter === label.id
@@ -138,48 +143,75 @@ export function Projects() {
       )}
 
       {projects.length > 0 && (
-        <div className="border border-border">
-          {projects.map((project) => (
-            <EntityRow
-              key={project.id}
-              title={project.name}
-              subtitle={project.description ?? undefined}
-              to={projectUrl(project)}
-              trailing={
-                <div className="flex items-center gap-3">
-                  {(project.labels ?? []).length > 0 && (
-                    <div className="hidden sm:flex items-center gap-1">
-                      {(project.labels ?? []).slice(0, 2).map((label) => (
-                        <span
-                          key={label.id}
-                          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
-                          style={{
-                            borderColor: label.color,
-                            backgroundColor: `${label.color}22`,
-                            color: label.color,
-                          }}
-                        >
-                          {label.name}
-                        </span>
-                      ))}
-                      {(project.labels ?? []).length > 2 && (
-                        <span className="text-xs text-muted-foreground">
-                          +{(project.labels ?? []).length - 2}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {project.targetDate && (
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(project.targetDate)}
-                    </span>
-                  )}
-                  <StatusBadge status={project.status} />
-                </div>
-              }
-            />
-          ))}
-        </div>
+        <>
+          <div className="border border-border">
+            {paginatedProjects.map((project) => (
+              <EntityRow
+                key={project.id}
+                title={project.name}
+                subtitle={project.description ?? undefined}
+                to={projectUrl(project)}
+                trailing={
+                  <div className="flex items-center gap-3">
+                    {(project.labels ?? []).length > 0 && (
+                      <div className="hidden sm:flex items-center gap-1">
+                        {(project.labels ?? []).slice(0, 2).map((label) => (
+                          <span
+                            key={label.id}
+                            className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
+                            style={{
+                              borderColor: label.color,
+                              backgroundColor: `${label.color}22`,
+                              color: label.color,
+                            }}
+                          >
+                            {label.name}
+                          </span>
+                        ))}
+                        {(project.labels ?? []).length > 2 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{(project.labels ?? []).length - 2}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {project.targetDate && (
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(project.targetDate)}
+                      </span>
+                    )}
+                    <StatusBadge status={project.status} />
+                  </div>
+                }
+              />
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-muted-foreground">
+                {currentPage * PAGE_SIZE + 1}–{Math.min((currentPage + 1) * PAGE_SIZE, projects.length)} of {projects.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage === 0}
+                  onClick={() => setCurrentPage((p) => p - 1)}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={currentPage >= totalPages - 1}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
